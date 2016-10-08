@@ -1,6 +1,7 @@
 package org.jenkinsci.plugins.parameterizedscheduler;
 
 import hudson.model.ParameterValue;
+import hudson.model.StringParameterValue;
 import hudson.model.AbstractProject;
 import hudson.model.ParameterDefinition;
 import hudson.model.ParametersAction;
@@ -12,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -53,17 +55,28 @@ public class ParameterizedTimerTrigger extends Trigger<AbstractProject> {
 		ParametersDefinitionProperty paramDefProp = (ParametersDefinitionProperty) job
 				.getProperty(ParametersDefinitionProperty.class);
 		ArrayList<ParameterValue> defValues = new ArrayList<ParameterValue>();
+		// Shallow copy parameterValues so that we can remove elements without also removing them
+		// from the variable held by the caller of this method.
+		Map<String, String> safelyModifiyableParameterValues = new HashMap<String, String>(parameterValues);
 
-		/* Scan for all parameter with an associated default values */
+		// Scan for all parameters with an associated default value
 		for (ParameterDefinition paramDefinition : paramDefProp.getParameterDefinitions()) {
 			ParameterValue defaultValue = paramDefinition.getDefaultParameterValue();
-
-			if (parameterValues.containsKey(paramDefinition.getName())) {
+			String parameterName = paramDefinition.getName();
+			if (parameterValues.containsKey(parameterName)) {
 				ParameterizedStaplerRequest request = new ParameterizedStaplerRequest(
-						parameterValues.get(paramDefinition.getName()));
+						parameterValues.get(parameterName));
 				defValues.add(paramDefinition.createValue(request));
+				// Remove this from the map so that we are left with only those that don't get added.
+				safelyModifiyableParameterValues.remove(parameterName);
 			} else if (defaultValue != null)
 				defValues.add(defaultValue);
+		}
+
+		// We have added all of the parameters that the ParametersDefinitionProperty already knew about,
+		// but what if someone added new ones in this plugin? We add those here.
+		for (Map.Entry<String, String> entry : safelyModifiyableParameterValues.entrySet()) {
+			defValues.add(new StringParameterValue(entry.getKey(), entry.getValue()));
 		}
 
 		return defValues;
